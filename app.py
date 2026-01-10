@@ -95,6 +95,30 @@ def create_task(current_user):
     db.session.commit()
     return jsonify({'message': 'Task created!', 'task_id': new_task.id})
 
+@app.route('/tasks/<int:task_id>/assign', methods=['PUT'])
+@token_required
+@role_required(['Admin', 'Manager'])
+def assign_task(current_user, task_id):
+    data = request.get_json()
+    task = Task.query.get_or_404(task_id)
+    task.user_id = data['user_id']
+    db.session.commit()
+    return jsonify({'message': f'Task assigned to user {data["user_id"]}'})
+
+@app.route('/tasks/<int:task_id>/status', methods=['PUT'])
+@token_required
+def update_task_status(current_user, task_id):
+    data = request.get_json()
+    task = Task.query.get_or_404(task_id)
+    
+    if current_user.role not in ['Admin', 'Manager'] and task.user_id != current_user.id:
+        return jsonify({'message': 'Unauthorized'}), 403
+    
+    task.status = data['status']
+    db.session.commit()
+    return jsonify({'message': 'Status updated'})
+
+
 
 if __name__ == '__main__':
     with app.app_context():
