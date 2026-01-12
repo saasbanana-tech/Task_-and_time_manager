@@ -118,7 +118,58 @@ def update_task_status(current_user, task_id):
     db.session.commit()
     return jsonify({'message': 'Status updated'})
 
+@app.route('/tasks/<int:task_id>/log-time', methods=['POST'])
+@token_required
+def log_time(current_user, task_id):
+    data = request.get_json()
+    task = Task.query.get_or_404(task_id)
+    
+    new_log = TimeLog(
+        hours=data['hours'],
+        description=data.get('description'),
+        task_id=task.id,
+        user_id=current_user.id
+    )
+    db.session.add(new_log)
+    db.session.commit()
+    return jsonify({'message': 'Time logged successfully'})
 
+@app.route('/my-summary', methods=['GET'])
+@token_required
+def get_summary(current_user):
+    logs = TimeLog.query.filter_by(user_id=current_user.id).all()
+    total_hours = sum(log.hours for log in logs)
+    
+    tasks_assigned = Task.query.filter_by(user_id=current_user.id).all()
+    task_list = [{
+        'id': t.id, 
+        'title': t.title, 
+        'status': t.status,
+        'hours_spent': sum(l.hours for l in t.time_logs if l.user_id == current_user.id)
+    } for t in tasks_assigned]
+
+    return jsonify({
+        'user': current_user.username,
+        'total_hours_logged': total_hours,
+        'tasks': task_list
+    })
+
+@app.route('/admin/generate-reports', methods=['POST'])
+@token_required
+@role_required(['Admin'])
+def generate_reports(current_user):
+    # In a real app, this would use Celery or APScheduler
+    # Here we just calculate and return it as a simulation
+    all_logs = TimeLog.query.all()
+    report = {}
+    for log in all_logs:
+        user = User.query.get(log.user_id).username
+        report[user] = report.get(user, 0) + log.hours
+    
+    return jsonify({
+        'status': 'Daily Summary Generated',
+        'data': report
+    })
 
 if __name__ == '__main__':
     with app.app_context():
