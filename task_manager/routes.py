@@ -10,6 +10,19 @@ from . import db
 main_bp = Blueprint('main', __name__)
 
 
+@main_bp.route('/', methods=['GET'])
+def welcome():
+    return jsonify({
+        'message': 'Welcome to Task & Time Manager API',
+        'version': '1.0',
+        'endpoints': {
+            'auth': ['/register', '/login'],
+            'tasks': ['/tasks', '/tasks/<task_id>/assign', '/tasks/<task_id>/status', '/tasks/<task_id>/log-time'],
+            'time_logs': ['/time-logs']
+        }
+    }), 200
+
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -44,7 +57,12 @@ def register():
     new_user = User(username=data['username'], password=hashed_password, role=data.get('role', 'User'))
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({'message': 'User created successfully!'}), 201
+    return jsonify({
+        'message': 'User created successfully!',
+        'user_id': new_user.id,
+        'username': new_user.username,
+        'role': new_user.role
+    }), 201
 
 
 @main_bp.route('/login', methods=['POST'])
@@ -78,8 +96,13 @@ def assign_task(current_user, task_id):
     data = request.get_json()
     task = Task.query.get_or_404(task_id)
     task.user_id = data['user_id']
+    task.assigned_at = datetime.datetime.utcnow()
     db.session.commit()
-    return jsonify({'message': f'Task assigned to user {data["user_id"]}'})
+    return jsonify({
+        'message': f'Task assigned to user {data["user_id"]}',
+        'task_id': task.id,
+        'assigned_at': task.assigned_at
+    })
 
 
 @main_bp.route('/tasks/<int:task_id>/status', methods=['PUT'])
@@ -92,8 +115,20 @@ def update_task_status(current_user, task_id):
         return jsonify({'message': 'Unauthorized'}), 403
 
     task.status = data['status']
+    
+    if data['status'].lower() == 'completed':
+        task.completed_at = datetime.datetime.utcnow()
+    
     db.session.commit()
-    return jsonify({'message': 'Status updated'})
+    
+    response = {'message': 'Status updated', 'status': task.status}
+    
+    if task.completed_at:
+        response['time_to_assign_hours'] = task.get_time_to_assign()
+        response['completion_time_hours'] = task.get_completion_time()
+        response['total_task_time_hours'] = task.get_total_task_time()
+    
+    return jsonify(response)
 
 
 @main_bp.route('/tasks/<int:task_id>/log-time', methods=['POST'])
@@ -124,7 +159,13 @@ def get_summary(current_user):
         'id': t.id,
         'title': t.title,
         'status': t.status,
-        'hours_spent': sum(l.hours for l in t.time_logs if l.user_id == current_user.id)
+        'hours_spent': sum(l.hours for l in t.time_logs if l.user_id == current_user.id),
+        'created_at': t.created_at.isoformat() if t.created_at else None,
+        'assigned_at': t.assigned_at.isoformat() if t.assigned_at else None,
+        'completed_at': t.completed_at.isoformat() if t.completed_at else None,
+        'time_to_assign_hours': t.get_time_to_assign(),
+        'completion_time_hours': t.get_completion_time(),
+        'total_task_time_hours': t.get_total_task_time()
     } for t in tasks_assigned]
 
     return jsonify({

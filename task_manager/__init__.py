@@ -13,18 +13,14 @@ def create_app(config_object=None):
     if config_object:
         app.config.from_object(config_object)
 
-    # Initialize extensions with app
     db.init_app(app)
 
     with app.app_context():
-        # Import parts of our application
-        from . import models  # registers models with SQLAlchemy
+        from . import models 
         from .routes import main_bp
 
-        # Register blueprints
         app.register_blueprint(main_bp)
-
-        # Ensure DB exists
+        
         db.create_all()
 
     return app
